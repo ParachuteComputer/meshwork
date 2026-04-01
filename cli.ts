@@ -499,6 +499,21 @@ async function cmdSend(args: string[]) {
   }
 }
 
+async function cmdAttach(args: string[]) {
+  const name = args[0];
+  if (!name) error("usage: pcc attach <name>");
+
+  if (!(await tmuxSessionExists(name))) {
+    error(`session "pcc-${name}" is not running`);
+  }
+
+  const proc = Bun.spawn(
+    ["tmux", "attach-session", "-t", `pcc-${name}`],
+    { stdio: ["inherit", "inherit", "inherit"] }
+  );
+  await proc.exited;
+}
+
 async function cmdStatus() {
   try {
     const res = await fetch(`${BROKER_URL}/health`, {
@@ -595,6 +610,9 @@ switch (cmd) {
   case "send":
     await cmdSend(args);
     break;
+  case "attach":
+    await cmdAttach(args);
+    break;
   case "status":
     await cmdStatus();
     break;
@@ -609,6 +627,7 @@ Usage:
   pcc stop <name>                       Stop a session (keeps in registry)
   pcc remove <name>                     Stop and remove from registry
   pcc restore                           Restore all sessions after reboot
+  pcc attach <name>                      Attach to a session (Ctrl+b d to detach)
   pcc output <name> [--lines N]         Capture session terminal output
   pcc send <name> <message>             Send a message via the broker
   pcc status                            Show broker health and peers
