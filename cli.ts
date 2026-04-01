@@ -274,6 +274,21 @@ async function cmdAdopt(args: string[]) {
   const result = await createTmuxSession(session, cmd);
   if (!result.ok) error(`failed to create tmux session: ${result.error}`);
 
+  // Give Claude a moment to start, then ensure the session is renamed
+  // --name may not rename an already-existing session, so inject /rename
+  if (flags.session || flags.continue) {
+    setTimeout(async () => {
+      await sh([
+        "tmux",
+        "send-keys",
+        "-t",
+        `pcc-${name}`,
+        `/rename pcc-${name}`,
+        "Enter",
+      ]);
+    }, 5000);
+  }
+
   const sessions = loadSessions().filter((s) => s.name !== name);
   sessions.push(session);
   saveSessions(sessions);
