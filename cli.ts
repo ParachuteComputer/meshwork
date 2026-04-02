@@ -411,6 +411,54 @@ async function cmdStop(args: string[]) {
   log(`Stopped session "${name}". Still in registry — 'pcc restore' will bring it back.`);
 }
 
+async function cmdEdit(args: string[]) {
+  const flags = parseFlags(args);
+  const name = flags._[0];
+  if (!name) error("usage: pcc edit <name> [--yolo] [--no-yolo] [--ask] [--no-ask] [--channel <ch>] [--no-channels] [--no-remote-control] [--remote-control]");
+
+  const sessions = loadSessions();
+  const session = sessions.find((s) => s.name === name);
+  if (!session) error(`session "${name}" not in registry`);
+
+  let changed = false;
+
+  if (flags.yolo) { session.yolo = true; session.ask = false; changed = true; }
+  if (flags["no-yolo"]) { session.yolo = false; changed = true; }
+  if (flags.ask) { session.ask = true; session.yolo = false; changed = true; }
+  if (flags["no-ask"]) { session.ask = false; changed = true; }
+  if (flags["remote-control"]) { session.noRemoteControl = false; changed = true; }
+  if (flags["no-remote-control"]) { session.noRemoteControl = true; changed = true; }
+  if (flags["no-channels"]) { session.channels = undefined; changed = true; }
+  if (flags.channel) {
+    const newChannels = Array.isArray(flags.channel) ? flags.channel : [flags.channel];
+    session.channels = newChannels;
+    changed = true;
+  }
+
+  if (!changed) {
+    // Show current config
+    log(`Session "${name}":`);
+    log(`  Path: ${session.path}`);
+    log(`  Permissions: ${session.yolo ? "yolo" : session.ask ? "ask" : "auto-mode"}`);
+    log(`  Remote control: ${session.noRemoteControl ? "off" : "on"}`);
+    log(`  Extra channels: ${session.channels?.join(", ") || "none"}`);
+    log(`\nUse flags to modify: --yolo, --no-yolo, --ask, --channel <ch>, --no-channels, --remote-control, --no-remote-control`);
+    return;
+  }
+
+  saveSessions(sessions);
+
+  const running = await tmuxSessionExists(name);
+  log(`Updated "${name}" config.`);
+  log(`  Permissions: ${session.yolo ? "yolo" : session.ask ? "ask" : "auto-mode"}`);
+  log(`  Remote control: ${session.noRemoteControl ? "off" : "on"}`);
+  log(`  Extra channels: ${session.channels?.join(", ") || "none"}`);
+  if (running) {
+    log(`\nSession is running — restart it for changes to take effect:`);
+    log(`  pcc stop ${name} && pcc start ${name}`);
+  }
+}
+
 async function cmdStart(args: string[]) {
   const name = args[0];
   if (!name) error("usage: pcc start <name>");
@@ -581,6 +629,14 @@ function parseFlags(args: string[]): any {
       result["no-remote-control"] = true;
     } else if (arg === "--attach" || arg === "-a") {
       result.attach = true;
+    } else if (arg === "--no-yolo") {
+      result["no-yolo"] = true;
+    } else if (arg === "--no-ask") {
+      result["no-ask"] = true;
+    } else if (arg === "--no-channels") {
+      result["no-channels"] = true;
+    } else if (arg === "--remote-control") {
+      result["remote-control"] = true;
     } else if (arg === "--continue") {
       result.continue = true;
     } else if (arg === "--channel" && i + 1 < args.length) {
@@ -620,6 +676,9 @@ switch (cmd) {
   case "ls":
     await cmdList();
     break;
+  case "edit":
+    await cmdEdit(args);
+    break;
   case "start":
     await cmdStart(args);
     break;
@@ -653,6 +712,7 @@ Usage:
   pcc init                              Setup PCC (install MCP server)
   pcc create <name> <path> [flags]      Create a new Claude session
   pcc adopt <name> <path> [flags]       Adopt an existing Claude session
+  pcc edit <name> [flags]                Edit session config (show config if no flags)
   pcc list                              List all sessions
   pcc start <name>                      Start a stopped session (resumes conversation)
   pcc stop <name>                       Stop a session (keeps in registry)
