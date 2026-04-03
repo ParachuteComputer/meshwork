@@ -1,10 +1,10 @@
-# PCC — Parachute Claude Control
+# Meshwork
 
-A lightweight bridge that lets Claude Code sessions discover each other and communicate in real-time using [MCP channels](https://code.claude.com/docs/en/channels.md).
+A lightweight bridge that lets AI coding sessions discover each other and communicate in real-time using [MCP channels](https://code.claude.com/docs/en/channels.md).
 
-PCC has two parts:
-- **A CLI** (`pcc`) for managing Claude Code sessions — create, stop, restore after reboot, and more
-- **An MCP server** (`pcc-bridge`) that gives every session 5 communication tools, with messages delivered instantly via channel push
+Meshwork has two parts:
+- **A CLI** (`meshwork` / `mw`) for managing sessions — create, stop, restore after reboot, and more
+- **An MCP server** that gives every session 5 communication tools, with messages delivered instantly via channel push
 
 ## How it works
 
@@ -13,25 +13,25 @@ You (tablet / Telegram / claude.ai)
   │
   ▼
 Orchestrator session ──bridge msg──▶ Worker sessions
-  (pcc-bridge + telegram)            (pcc-bridge)
+  (meshwork + telegram)              (meshwork)
   ◀──bridge msg──────────────────────┘
 ```
 
-Every Claude Code session runs the `pcc-bridge` MCP server as a subprocess. A shared SQLite broker on localhost routes messages between them. Messages arrive in Claude's context as `<channel>` tags — like a coworker tapping it on the shoulder — so Claude reacts immediately without polling.
+Every session runs the meshwork MCP server as a subprocess. A shared SQLite broker on localhost routes messages between them. Messages arrive in the session's context as `<channel>` tags — like a coworker tapping it on the shoulder — so the agent reacts immediately without polling.
 
 ## Install
 
 ```bash
-bun install -g github:ParachuteComputer/pcc
+bun install -g github:ParachuteComputer/meshwork
 ```
 
 ## Setup
 
 ```bash
-pcc init
+meshwork init
 ```
 
-This adds the `pcc-bridge` MCP server to `~/.claude/settings.json` so every Claude Code session gets it automatically.
+This adds the meshwork MCP server to `~/.claude.json` so every Claude Code session gets it automatically.
 
 ## Usage
 
@@ -39,29 +39,35 @@ This adds the `pcc-bridge` MCP server to `~/.claude/settings.json` so every Clau
 
 ```bash
 # Worker session (auto-mode permissions, remote-control enabled)
-pcc create atlas ~/Code/atlas
+meshwork create atlas ~/Code/atlas
 
 # Orchestrator with yolo + Telegram
-pcc create orchestrator ~/Code --yolo --channel "plugins:telegram@claude-plugins-official"
+meshwork create orchestrator ~/Code --yolo --channel "plugins:telegram@claude-plugins-official"
 
 # Session with normal interactive permissions
-pcc create careful-worker ~/Code/sensitive --ask
+meshwork create careful-worker ~/Code/sensitive --ask
+
+# Attach to handle first-run prompts
+meshwork create atlas ~/Code/atlas --attach
 ```
 
 ### Manage sessions
 
 ```bash
-pcc list                    # Show all sessions with status
-pcc stop atlas              # Stop (keeps in registry for restore)
-pcc remove atlas            # Stop and remove from registry
-pcc output atlas            # Capture terminal output
-pcc status                  # Broker health and connected peers
+meshwork list                    # Show all sessions with status
+meshwork start atlas             # Start a stopped session (resumes conversation)
+meshwork stop atlas              # Stop (keeps in registry)
+meshwork attach atlas            # Drop into a session (Ctrl+b d to detach)
+meshwork edit atlas --yolo       # Change session config
+meshwork remove atlas            # Stop and remove from registry
+meshwork output atlas            # Capture terminal output
+meshwork status                  # Broker health and connected peers
 ```
 
 ### After a reboot
 
 ```bash
-pcc restore
+meshwork restore
 ```
 
 Recreates all registered sessions and resumes their previous conversations.
@@ -69,14 +75,25 @@ Recreates all registered sessions and resumes their previous conversations.
 ### Adopt existing sessions
 
 ```bash
-pcc adopt atlas ~/Code/atlas --continue       # Most recent session in that dir
-pcc adopt atlas ~/Code/atlas --session <id>   # Specific session ID
+meshwork adopt atlas ~/Code/atlas --continue       # Most recent session in that dir
+meshwork adopt atlas ~/Code/atlas --session <id>   # Specific session ID
 ```
 
 ### Send messages from the terminal
 
 ```bash
-pcc send atlas "check for open PRs and summarize them"
+meshwork send atlas "check for open PRs and summarize them"
+```
+
+### Short alias
+
+All commands also work with `mw`:
+
+```bash
+mw create atlas ~/Code/atlas
+mw list
+mw send atlas "check PRs"
+mw attach atlas
 ```
 
 ## How sessions communicate
@@ -91,7 +108,7 @@ Every session gets 5 MCP tools:
 | `set_my_status` | Announce what you're working on |
 | `whoami` | Your identity on the bridge |
 
-Messages are delivered via MCP channel push — the bridge's MCP server polls a local SQLite broker every second and pushes new messages into Claude's context as `<channel>` notifications. Claude sees them and responds immediately.
+Messages are delivered via MCP channel push — the MCP server polls a local SQLite broker every second and pushes new messages into the session's context as `<channel>` notifications. The agent sees them and responds immediately.
 
 ### Example flow
 
@@ -107,7 +124,7 @@ Orchestrator calls: send_peer_message(to: "atlas", message: "Review PR #42")
     Atlas's MCP server polls, pushes via channel
          │
          ▼
-    Atlas sees: <channel source="pcc-bridge" from="orchestrator">
+    Atlas sees: <channel source="meshwork" from="orchestrator">
                 Review PR #42
                 </channel>
          │
@@ -118,14 +135,14 @@ Orchestrator calls: send_peer_message(to: "atlas", message: "Review PR #42")
 ## Architecture
 
 ```
-~/.pcc/sessions.json          Session registry (survives reboots)
-~/.pcc-bridge.db              SQLite broker database
-~/.claude/settings.json       MCP server registration
+~/.meshwork/sessions.json     Session registry (survives reboots)
+~/.meshwork.db                SQLite broker database
+~/.claude.json                MCP server registration
 
-cli.ts                        CLI (pcc command)
+cli.ts                        CLI (meshwork / mw command)
 bridge/
   broker.ts                   SQLite HTTP broker (auto-launched)
-  server.ts                   MCP server (one per Claude session)
+  server.ts                   MCP server (one per session)
   types.ts                    Shared types
 ```
 
@@ -133,7 +150,7 @@ bridge/
 
 **Message delivery** uses ACK-based delivery: messages aren't marked as delivered until the MCP server confirms the channel push succeeded. If the MCP server crashes between poll and ACK, messages are retried on next startup.
 
-**Session persistence** uses Claude Code's `--name` flag. Each session is named `pcc-{name}`, so `pcc restore` can resume conversations by name after a reboot.
+**Session persistence** uses Claude Code's `--name` flag. Each session is named `mw-{name}`, so `meshwork restore` can resume conversations by name after a reboot.
 
 ## Defaults
 

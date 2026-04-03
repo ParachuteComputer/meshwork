@@ -7,7 +7,7 @@ import {
 import { resolve, basename } from "path";
 import type { Peer, Message } from "./types.ts";
 
-const BROKER_PORT = parseInt(process.env.PCC_BROKER_PORT || "7899");
+const BROKER_PORT = parseInt(process.env.MESHWORK_PORT || "7899");
 const BROKER_URL = `http://127.0.0.1:${BROKER_PORT}`;
 const POLL_INTERVAL = 1000;
 const HEARTBEAT_INTERVAL = 15_000;
@@ -59,7 +59,7 @@ async function ensureBroker(): Promise<void> {
 // --- MCP Server ---
 
 const server = new Server(
-  { name: "pcc-bridge", version: "0.1.0" },
+  { name: "meshwork", version: "0.1.0" },
   {
     capabilities: {
       experimental: { "claude/channel": {} },
@@ -67,7 +67,7 @@ const server = new Server(
     },
     instructions: `You have access to a peer communication bridge that connects you to other Claude Code sessions on this machine.
 
-When you receive a <channel source="pcc-bridge"> message, treat it like a coworker reaching out — read it and respond promptly. If it's a task, do the work and send back results. If it's a question, answer it. If it's informational, acknowledge briefly.
+When you receive a <channel source="meshwork"> message, treat it like a coworker reaching out — read it and respond promptly. If it's a task, do the work and send back results. If it's a question, answer it. If it's informational, acknowledge briefly.
 
 Use send_peer_message to talk to peers. Use list_peers to see who's available.
 
@@ -310,7 +310,7 @@ process.on("SIGTERM", shutdown);
 async function main() {
   await ensureBroker();
 
-  const peerName = process.env.PCC_NAME || basename(cwd);
+  const peerName = process.env.MW_NAME || basename(cwd);
 
   const reg = await brokerPost("/register", {
     name: peerName,
@@ -327,6 +327,6 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error("pcc-bridge server failed to start:", e);
+  console.error("meshwork server failed to start:", e);
   process.exit(1);
 });

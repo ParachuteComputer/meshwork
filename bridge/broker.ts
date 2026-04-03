@@ -3,9 +3,9 @@ import { resolve } from "path";
 import { homedir } from "os";
 import type { Peer, Message } from "./types.ts";
 
-const PORT = parseInt(process.env.PCC_BROKER_PORT || "7899");
+const PORT = parseInt(process.env.MESHWORK_PORT || "7899");
 const DB_PATH =
-  process.env.PCC_BROKER_DB || resolve(homedir(), ".pcc-bridge.db");
+  process.env.MESHWORK_DB || resolve(homedir(), ".meshwork.db");
 const STALE_MS = 60_000;
 
 const db = new Database(DB_PATH);
@@ -93,7 +93,7 @@ Bun.serve({
       return json({ ok: true, peers: n });
     }
 
-    if (req.method !== "POST") return new Response("pcc-bridge broker");
+    if (req.method !== "POST") return new Response("meshwork broker");
 
     let body: any;
     try {
@@ -231,4 +231,4 @@ Bun.serve({
   },
 });
 
-console.log(`pcc-bridge broker running on 127.0.0.1:${PORT}`);
+console.log(`meshwork broker running on 127.0.0.1:${PORT}`);

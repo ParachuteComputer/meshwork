@@ -1,9 +1,10 @@
 {
-  "name": "pcc-bridge",
+  "name": "meshwork",
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "pcc": "./cli.ts"
+    "meshwork": "./cli.ts",
+    "mw": "./cli.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.0"
