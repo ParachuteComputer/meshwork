@@ -11,9 +11,14 @@ const BRIDGE_DIR = resolve(import.meta.dir, "bridge");
 
 // --- Types ---
 
+type Tier = "observer" | "worker" | "orchestrator";
+
 interface Session {
   name: string;
   path: string;
+  tier?: Tier;
+  meshChannel?: string;
+  acceptFrom?: string;
   yolo?: boolean;
   ask?: boolean;
   noRemoteControl?: boolean;
@@ -58,7 +63,10 @@ async function sh(
 }
 
 function buildClaudeCmd(session: Session): string {
-  const parts = ["MW_NAME=" + session.name, "claude"];
+  const tier = session.tier || "worker";
+  const meshCh = session.meshChannel || "default";
+  const acceptFrom = session.acceptFrom || "*";
+  const parts = [`MW_NAME=${session.name}`, `MW_TIER=${tier}`, `MW_CHANNEL=${meshCh}`, `MW_ACCEPT_FROM=${acceptFrom}`, "claude"];
 
   if (session.yolo) {
     parts.push("--dangerously-skip-permissions");
@@ -85,7 +93,10 @@ function buildClaudeCmd(session: Session): string {
 }
 
 function buildResumCmd(session: Session): string {
-  const parts = ["MW_NAME=" + session.name, "claude"];
+  const tier = session.tier || "worker";
+  const meshCh = session.meshChannel || "default";
+  const acceptFrom = session.acceptFrom || "*";
+  const parts = [`MW_NAME=${session.name}`, `MW_TIER=${tier}`, `MW_CHANNEL=${meshCh}`, `MW_ACCEPT_FROM=${acceptFrom}`, "claude"];
 
   if (session.yolo) {
     parts.push("--dangerously-skip-permissions");
@@ -212,7 +223,7 @@ async function cmdCreate(args: string[]) {
   const flags = parseFlags(args);
   const positional = flags._;
   if (positional.length < 2) {
-    error("usage: meshwork create <name> <path> [--yolo] [--ask] [--no-remote-control] [--channel <ch>]");
+    error("usage: meshwork create <name> <path> [--tier observer|worker|orchestrator] [--mesh-channel <ch>] [--accept-from <policy>] [--yolo] [--ask] [--no-remote-control] [--channel <ch>]");
   }
 
   const name = positional[0];
@@ -226,9 +237,16 @@ async function cmdCreate(args: string[]) {
     error(`session "mw-${name}" already exists in tmux`);
   }
 
+  const tier = (flags.tier && ["observer", "worker", "orchestrator"].includes(flags.tier))
+    ? flags.tier as Tier
+    : "worker";
+
   const session: Session = {
     name,
     path,
+    tier,
+    meshChannel: flags["mesh-channel"] || undefined,
+    acceptFrom: flags["accept-from"] || undefined,
     yolo: flags.yolo || false,
     ask: flags.ask || false,
     noRemoteControl: flags["no-remote-control"] || false,
@@ -261,7 +279,7 @@ async function cmdAdopt(args: string[]) {
   const flags = parseFlags(args);
   const positional = flags._;
   if (positional.length < 2) {
-    error("usage: meshwork adopt <name> <path> [--session <id>] [--continue] [--yolo] [--channel <ch>]");
+    error("usage: meshwork adopt <name> <path> [--session <id>] [--continue] [--tier observer|worker|orchestrator] [--mesh-channel <ch>] [--accept-from <policy>] [--yolo] [--channel <ch>]");
   }
 
   const name = positional[0];
@@ -271,9 +289,18 @@ async function cmdAdopt(args: string[]) {
     error(`session "mw-${name}" already exists in tmux`);
   }
 
+  const tier = (flags.tier && ["observer", "worker", "orchestrator"].includes(flags.tier))
+    ? flags.tier as Tier
+    : "worker";
+  const meshCh = flags["mesh-channel"] || "default";
+  const acceptFrom = flags["accept-from"] || "*";
+
   const session: Session = {
     name,
     path,
+    tier,
+    meshChannel: flags["mesh-channel"] || undefined,
+    acceptFrom: flags["accept-from"] || undefined,
     yolo: flags.yolo || false,
     ask: flags.ask || false,
     noRemoteControl: flags["no-remote-control"] || false,
@@ -281,7 +308,7 @@ async function cmdAdopt(args: string[]) {
     created_at: new Date().toISOString(),
   };
 
-  const parts = ["MW_NAME=" + name, "claude"];
+  const parts = [`MW_NAME=${name}`, `MW_TIER=${tier}`, `MW_CHANNEL=${meshCh}`, `MW_ACCEPT_FROM=${acceptFrom}`, "claude"];
 
   if (session.yolo) parts.push("--dangerously-skip-permissions");
   else if (!session.ask) parts.push("--enable-auto-mode");
@@ -383,6 +410,8 @@ async function cmdList() {
     }
 
     const flags = [];
+    flags.push(s.tier || "worker");
+    if (s.meshChannel && s.meshChannel !== "default") flags.push(`#${s.meshChannel}`);
     if (s.yolo) flags.push("yolo");
     if (s.ask) flags.push("ask");
     if (s.channels?.length) flags.push(`+${s.channels.length} channels`);
@@ -406,7 +435,7 @@ async function cmdStop(args: string[]) {
 async function cmdEdit(args: string[]) {
   const flags = parseFlags(args);
   const name = flags._[0];
-  if (!name) error("usage: meshwork edit <name> [--yolo] [--no-yolo] [--ask] [--no-ask] [--channel <ch>] [--no-channels] [--no-remote-control] [--remote-control]");
+  if (!name) error("usage: meshwork edit <name> [--tier <t>] [--mesh-channel <ch>] [--accept-from <policy>] [--yolo] [--no-yolo] [--ask] [--no-ask] [--channel <ch>] [--no-channels] [--no-remote-control] [--remote-control]");
 
   const sessions = loadSessions();
   const session = sessions.find((s) => s.name === name);
@@ -414,6 +443,12 @@ async function cmdEdit(args: string[]) {
 
   let changed = false;
 
+  if (flags.tier && ["observer", "worker", "orchestrator"].includes(flags.tier)) {
+    session.tier = flags.tier as Tier;
+    changed = true;
+  }
+  if (flags["mesh-channel"]) { session.meshChannel = flags["mesh-channel"]; changed = true; }
+  if (flags["accept-from"]) { session.acceptFrom = flags["accept-from"]; changed = true; }
   if (flags.yolo) { session.yolo = true; session.ask = false; changed = true; }
   if (flags["no-yolo"]) { session.yolo = false; changed = true; }
   if (flags.ask) { session.ask = true; session.yolo = false; changed = true; }
@@ -430,10 +465,13 @@ async function cmdEdit(args: string[]) {
   if (!changed) {
     log(`Session "${name}":`);
     log(`  Path: ${session.path}`);
+    log(`  Tier: ${session.tier || "worker"}`);
+    log(`  Mesh channel: ${session.meshChannel || "default"}`);
+    log(`  Accept from: ${session.acceptFrom || "*"}`);
     log(`  Permissions: ${session.yolo ? "yolo" : session.ask ? "ask" : "auto-mode"}`);
     log(`  Remote control: ${session.noRemoteControl ? "off" : "on"}`);
     log(`  Extra channels: ${session.channels?.join(", ") || "none"}`);
-    log(`\nUse flags to modify: --yolo, --no-yolo, --ask, --channel <ch>, --no-channels, --remote-control, --no-remote-control`);
+    log(`\nUse flags to modify: --tier, --mesh-channel, --accept-from, --yolo, --no-yolo, --ask, --channel <ch>, --no-channels, --remote-control, --no-remote-control`);
     return;
   }
 
@@ -441,6 +479,9 @@ async function cmdEdit(args: string[]) {
 
   const running = await tmuxSessionExists(name);
   log(`Updated "${name}" config.`);
+  log(`  Tier: ${session.tier || "worker"}`);
+  log(`  Mesh channel: ${session.meshChannel || "default"}`);
+  log(`  Accept from: ${session.acceptFrom || "*"}`);
   log(`  Permissions: ${session.yolo ? "yolo" : session.ask ? "ask" : "auto-mode"}`);
   log(`  Remote control: ${session.noRemoteControl ? "off" : "on"}`);
   log(`  Extra channels: ${session.channels?.join(", ") || "none"}`);
@@ -592,7 +633,7 @@ async function cmdStatus() {
       });
       const peers = await peersRes.json();
       for (const p of peers) {
-        log(`  • ${p.name} — ${p.status || "no status"} — ${p.cwd}`);
+        log(`  • ${p.name} [${p.tier || "worker"}] — ${p.status || "no status"} — ${p.cwd}`);
       }
     }
   } catch {
@@ -625,6 +666,15 @@ function parseFlags(args: string[]): any {
       result["remote-control"] = true;
     } else if (arg === "--continue") {
       result.continue = true;
+    } else if (arg === "--tier" && i + 1 < args.length) {
+      i++;
+      result.tier = args[i];
+    } else if (arg === "--mesh-channel" && i + 1 < args.length) {
+      i++;
+      result["mesh-channel"] = args[i];
+    } else if (arg === "--accept-from" && i + 1 < args.length) {
+      i++;
+      result["accept-from"] = args[i];
     } else if (arg === "--channel" && i + 1 < args.length) {
       i++;
       if (!result.channel) result.channel = [];
@@ -712,12 +762,20 @@ Usage:
   Also available as 'mw' (e.g., mw list, mw create, mw attach).
 
 Flags for create/adopt:
+  --tier <t>            Permission tier: observer, worker (default), orchestrator
+  --mesh-channel <ch>   Mesh channel for message isolation (default: "default")
+  --accept-from <p>     Who can message this session: * (default), orchestrator-only, or peer name
   --yolo                Use --dangerously-skip-permissions
   --ask                 Use interactive permissions (no auto-mode)
   --no-remote-control   Don't start in remote-control mode
   --attach, -a          Attach to session after creation
-  --channel <ch>        Add extra channel (repeatable)
+  --channel <ch>        Add extra Claude Code channel (repeatable)
   --session <id>        Resume specific session (adopt only)
-  --continue            Resume most recent session (adopt only)`);
+  --continue            Resume most recent session (adopt only)
+
+Tiers:
+  observer              Can receive messages, see peers, and list tasks
+  worker                Can send to orchestrators, update assigned tasks (default)
+  orchestrator          Full access — message any peer, delegate tasks`);
     break;
 }
